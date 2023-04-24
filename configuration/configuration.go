@@ -258,6 +258,10 @@ type Configuration struct {
 			Classes []string `yaml:"classes"`
 		} `yaml:"repository,omitempty"`
 	} `yaml:"policy,omitempty"`
+
+	// AutomaticContentDiscovery enables automatic content discovery options for the registry.
+	// It must only be used with auth disabled.
+	AutomaticContentDiscovery bool `yaml:"automaticcontentdiscovery,omitempty"`
 }
 
 // LogHook is composed of hook Level and Type.
