@@ -22,14 +22,15 @@ import (
 
 // proxyingRegistry fetches content from a remote registry and caches it locally
 type proxyingRegistry struct {
-	embedded       distribution.Namespace // provides local registry functionality
-	scheduler      *scheduler.TTLExpirationScheduler
-	remoteURL      url.URL
-	authChallenger authChallenger
+	embedded          distribution.Namespace // provides local registry functionality
+	scheduler         *scheduler.TTLExpirationScheduler
+	remoteURL         url.URL
+	authChallenger    authChallenger
+	descriptorService distribution.BlobDescriptorService // tags descriptors with 'public' annotation
 }
 
 // NewRegistryPullThroughCache creates a registry acting as a pull through cache
-func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Namespace, driver driver.StorageDriver, config configuration.Proxy) (distribution.Namespace, error) {
+func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Namespace, driver driver.StorageDriver, config configuration.Proxy, ds distribution.BlobDescriptorService) (distribution.Namespace, error) {
 	remoteURL, err := url.Parse(config.RemoteURL)
 	if err != nil {
 		return nil, err
@@ -107,6 +108,7 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 			cm:        challenge.NewSimpleManager(),
 			cs:        cs,
 		},
+		descriptorService: ds,
 	}, nil
 }
 
@@ -158,11 +160,12 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 
 	return &proxiedRepository{
 		blobStore: &proxyBlobStore{
-			localStore:     localRepo.Blobs(ctx),
-			remoteStore:    remoteRepo.Blobs(ctx),
-			scheduler:      pr.scheduler,
-			repositoryName: name,
-			authChallenger: pr.authChallenger,
+			localStore:        localRepo.Blobs(ctx),
+			remoteStore:       remoteRepo.Blobs(ctx),
+			scheduler:         pr.scheduler,
+			repositoryName:    name,
+			authChallenger:    pr.authChallenger,
+			descriptorService: pr.descriptorService,
 		},
 		manifests: &proxyManifestStore{
 			repositoryName:  name,

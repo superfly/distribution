@@ -341,7 +341,11 @@ func NewApp(ctx context.Context, config *configuration.Configuration) *App {
 
 	// configure as a pull through cache
 	if config.Proxy.RemoteURL != "" {
-		app.registry, err = proxy.NewRegistryPullThroughCache(ctx, app.registry, app.driver, config.Proxy)
+		var ds distribution.BlobDescriptorService
+		if app.redis != nil {
+			ds = rediscache.NewRedisBlobDescriptorCacheProvider(app.redis)
+		}
+		app.registry, err = proxy.NewRegistryPullThroughCache(ctx, app.registry, app.driver, config.Proxy, ds)
 		if err != nil {
 			panic(err.Error())
 		}

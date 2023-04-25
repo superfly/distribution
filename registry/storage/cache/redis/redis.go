@@ -92,7 +92,7 @@ func (rbds *redisBlobDescriptorService) Clear(ctx context.Context, dgst digest.D
 // stat provides an internal stat call that takes a connection parameter. This
 // allows some internal management of the connection scope.
 func (rbds *redisBlobDescriptorService) stat(ctx context.Context, conn redis.Conn, dgst digest.Digest) (distribution.Descriptor, error) {
-	reply, err := redis.Values(conn.Do("HMGET", rbds.blobDescriptorHashKey(dgst), "digest", "size", "mediatype"))
+	reply, err := redis.Values(conn.Do("HMGET", rbds.blobDescriptorHashKey(dgst), "digest", "size", "mediatype", "public"))
 	if err != nil {
 		return distribution.Descriptor{}, err
 	}
@@ -100,13 +100,18 @@ func (rbds *redisBlobDescriptorService) stat(ctx context.Context, conn redis.Con
 	// NOTE(stevvooe): The "size" field used to be "length". We treat a
 	// missing "size" field here as an unknown blob, which causes a cache
 	// miss, effectively migrating the field.
-	if len(reply) < 3 || reply[0] == nil || reply[1] == nil { // don't care if mediatype is nil
+	if len(reply) < 3 || reply[0] == nil || reply[1] == nil { // don't care if mediatype or public are nil
 		return distribution.Descriptor{}, distribution.ErrBlobUnknown
 	}
 
 	var desc distribution.Descriptor
-	if _, err := redis.Scan(reply, &desc.Digest, &desc.Size, &desc.MediaType); err != nil {
+	var public string
+	if _, err := redis.Scan(reply, &desc.Digest, &desc.Size, &desc.MediaType, &public); err != nil {
 		return distribution.Descriptor{}, err
+	}
+	// Set the "public" field on the descriptor as an annotation.
+	if public != "" {
+		desc.Annotations = map[string]string{"public": public}
 	}
 
 	return desc, nil
@@ -133,6 +138,7 @@ func (rbds *redisBlobDescriptorService) SetDescriptor(ctx context.Context, dgst 
 func (rbds *redisBlobDescriptorService) setDescriptor(ctx context.Context, conn redis.Conn, dgst digest.Digest, desc distribution.Descriptor) error {
 	if _, err := conn.Do("HMSET", rbds.blobDescriptorHashKey(dgst),
 		"digest", desc.Digest,
+		"public", desc.Annotations["public"],
 		"size", desc.Size); err != nil {
 		return err
 	}

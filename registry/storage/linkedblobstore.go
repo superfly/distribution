@@ -316,9 +316,13 @@ func (lbs *linkedBlobStore) mount(ctx context.Context, mount distribution.Mount)
 			// "from". This could be optimized, specifically if the bloblistener did not need to have the
 			// from information.
 			var err error
-			stat, err = lbs.registry.statter.Stat(ctx, v.Digest())
+			stat, err = lbs.statter.Stat(ctx, v.Digest())
 			if err != nil {
 				return distribution.Descriptor{}, nil, err
+			}
+			// Require blob descriptor to have 'public' annotation for automatic discovery.
+			if _, ok := stat.Annotations["public"]; !ok {
+				return distribution.Descriptor{}, nil, distribution.ErrBlobUnknown
 			}
 		} else {
 			return distribution.Descriptor{}, nil, errNoDiscoveryMechanism

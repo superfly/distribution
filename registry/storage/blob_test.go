@@ -393,7 +393,7 @@ func createSource(ctx context.Context, t *testing.T, registry distribution.Names
 		t.Fatalf("unexpected error uploading layer data: %v", err)
 	}
 
-	desc, err := upload.Commit(ctx, distribution.Descriptor{Digest: digest})
+	desc, err := upload.Commit(ctx, distribution.Descriptor{Digest: digest, Annotations: map[string]string{"public": "true"}})
 	if err != nil {
 		t.Fatalf("unexpected error finishing layer upload: %v", err)
 	}
@@ -443,9 +443,9 @@ func testBlobMountAutomaticContentDiscovery(t *testing.T, enableAutomaticContent
 	var registry distribution.Namespace
 	var err error
 	if enableAutomaticContentDiscovery {
-		registry, err = NewRegistry(ctx, driver, BlobDescriptorCacheProvider(memory.NewInMemoryBlobDescriptorCacheProvider()), EnableDelete, EnableRedirect, EnableAutomaticContentDiscovery)
+		registry, err = NewRegistry(ctx, driver, BlobDescriptorCacheProvider(memory.NewInMemoryBlobDescriptorCacheProvider(memory.UnlimitedSize)), EnableDelete, EnableRedirect, EnableAutomaticContentDiscovery)
 	} else {
-		registry, err = NewRegistry(ctx, driver, BlobDescriptorCacheProvider(memory.NewInMemoryBlobDescriptorCacheProvider()), EnableDelete, EnableRedirect)
+		registry, err = NewRegistry(ctx, driver, BlobDescriptorCacheProvider(memory.NewInMemoryBlobDescriptorCacheProvider(memory.UnlimitedSize)), EnableDelete, EnableRedirect)
 	}
 	if err != nil {
 		t.Fatalf("error creating registry: %v", err)
@@ -499,6 +499,7 @@ func testBlobMountAutomaticContentDiscovery(t *testing.T, enableAutomaticContent
 		mountedDescriptor = ebmf.Descriptor
 	}
 
+	mountedDescriptor.Annotations = map[string]string{"public": "true"}
 	if !reflect.DeepEqual(mountedDescriptor, source.desc) {
 		t.Fatalf("descriptors not equal: %v != %v", mountedDescriptor, source.desc)
 	}
