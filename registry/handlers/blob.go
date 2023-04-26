@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"errors"
+	"github.com/distribution/distribution/v3/registry/storage"
 	"net/http"
 
 	"github.com/distribution/distribution/v3"
@@ -51,19 +53,35 @@ type blobHandler struct {
 	Digest digest.Digest
 }
 
-// GetBlob fetches the binary data from backend storage returns it in the
+// GetBlob fetches the binary data from backend storage and returns it in the
 // response.
+// Any public blob will be automatically mounted to the repository.
 func (bh *blobHandler) GetBlob(w http.ResponseWriter, r *http.Request) {
 	context.GetLogger(bh).Debug("GetBlob")
 	blobs := bh.Repository.Blobs(bh)
 	desc, err := blobs.Stat(bh, bh.Digest)
 	if err != nil {
 		if err == distribution.ErrBlobUnknown {
-			bh.Errors = append(bh.Errors, v2.ErrorCodeBlobUnknown.WithDetail(bh.Digest))
+			// Attempt to auto-mount blob
+			w, err := blobs.Create(bh, storage.WithMount(bh.Digest))
+			if err != nil {
+				var ebm distribution.ErrBlobMounted
+				if errors.As(err, &ebm) {
+					// Successfully mounted, proceed to ServeBlob
+				} else {
+					context.GetLogger(bh).Debugf("unexpected error auto-mounting blob: %v", err)
+					bh.Errors = append(bh.Errors, v2.ErrorCodeBlobUnknown.WithDetail(bh.Digest))
+					return
+				}
+			} else {
+				err = w.Cancel(bh)
+				bh.Errors = append(bh.Errors, v2.ErrorCodeBlobUnknown.WithDetail(bh.Digest))
+				return
+			}
 		} else {
 			bh.Errors = append(bh.Errors, errcode.ErrorCodeUnknown.WithDetail(err))
+			return
 		}
-		return
 	}
 
 	if err := blobs.ServeBlob(bh, w, r, desc.Digest); err != nil {
