@@ -138,7 +138,6 @@ func (rbds *redisBlobDescriptorService) SetDescriptor(ctx context.Context, dgst 
 func (rbds *redisBlobDescriptorService) setDescriptor(ctx context.Context, conn redis.Conn, dgst digest.Digest, desc distribution.Descriptor) error {
 	if _, err := conn.Do("HMSET", rbds.blobDescriptorHashKey(dgst),
 		"digest", desc.Digest,
-		"public", desc.Annotations["public"],
 		"size", desc.Size); err != nil {
 		return err
 	}
@@ -147,6 +146,14 @@ func (rbds *redisBlobDescriptorService) setDescriptor(ctx context.Context, conn 
 	if _, err := conn.Do("HSETNX", rbds.blobDescriptorHashKey(dgst),
 		"mediatype", desc.MediaType); err != nil {
 		return err
+	}
+
+	// Set public if annotation is present.
+	if public, ok := desc.Annotations["public"]; ok {
+		if _, err := conn.Do("HMSET", rbds.blobDescriptorHashKey(dgst),
+			"public", public); err != nil {
+			return err
+		}
 	}
 
 	return nil
