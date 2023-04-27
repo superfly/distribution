@@ -57,19 +57,21 @@ type blobHandler struct {
 // response.
 // Any public blob will be automatically mounted to the repository.
 func (bh *blobHandler) GetBlob(w http.ResponseWriter, r *http.Request) {
-	context.GetLogger(bh).Debug("GetBlob")
+	blobDigest := bh.Digest
+	logger := context.GetLoggerWithField(bh, "digest", bh.Digest)
+	logger.Debug("GetBlob")
 	blobs := bh.Repository.Blobs(bh)
 	desc, err := blobs.Stat(bh, bh.Digest)
 	if err != nil {
 		if err == distribution.ErrBlobUnknown {
-			// Attempt to auto-mount blob
+			logger.Debug("Attempt to auto-mount blob")
 			w, err := blobs.Create(bh, storage.WithMount(bh.Digest))
 			if err != nil {
 				var ebm distribution.ErrBlobMounted
 				if errors.As(err, &ebm) {
-					// Successfully mounted, proceed to ServeBlob
+					logger.Debug("Successfully auto-mounted blob")
 				} else {
-					context.GetLogger(bh).Debugf("unexpected error auto-mounting blob: %v", err)
+					logger.Debugf("unexpected error auto-mounting blob: %v", err)
 					bh.Errors = append(bh.Errors, v2.ErrorCodeBlobUnknown.WithDetail(bh.Digest))
 					return
 				}
@@ -82,10 +84,12 @@ func (bh *blobHandler) GetBlob(w http.ResponseWriter, r *http.Request) {
 			bh.Errors = append(bh.Errors, errcode.ErrorCodeUnknown.WithDetail(err))
 			return
 		}
+	} else {
+		blobDigest = desc.Digest
 	}
 
-	if err := blobs.ServeBlob(bh, w, r, desc.Digest); err != nil {
-		context.GetLogger(bh).Debugf("unexpected error getting blob HTTP handler: %v", err)
+	if err := blobs.ServeBlob(bh, w, r, blobDigest); err != nil {
+		logger.Debugf("unexpected error getting blob HTTP handler: %v", err)
 		bh.Errors = append(bh.Errors, errcode.ErrorCodeUnknown.WithDetail(err))
 		return
 	}
