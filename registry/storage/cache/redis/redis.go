@@ -100,7 +100,7 @@ func (rbds *redisBlobDescriptorService) stat(ctx context.Context, conn redis.Con
 	// NOTE(stevvooe): The "size" field used to be "length". We treat a
 	// missing "size" field here as an unknown blob, which causes a cache
 	// miss, effectively migrating the field.
-	if len(reply) < 3 || reply[0] == nil || reply[1] == nil { // don't care if mediatype or public are nil
+	if len(reply) < 3 || reply[0] == nil || reply[0] == "" || reply[1] == nil { // don't care if mediatype or public are nil
 		return distribution.Descriptor{}, distribution.ErrBlobUnknown
 	}
 
@@ -136,10 +136,18 @@ func (rbds *redisBlobDescriptorService) SetDescriptor(ctx context.Context, dgst 
 }
 
 func (rbds *redisBlobDescriptorService) setDescriptor(ctx context.Context, conn redis.Conn, dgst digest.Digest, desc distribution.Descriptor) error {
-	if _, err := conn.Do("HMSET", rbds.blobDescriptorHashKey(dgst),
-		"digest", desc.Digest,
-		"size", desc.Size); err != nil {
-		return err
+	// Set nil digest and size for placeholder descriptors.
+	if desc.Digest.String() == "" {
+		if _, err := conn.Do("HDEL", rbds.blobDescriptorHashKey(dgst),
+			"digest", "size"); err != nil {
+			return err
+		}
+	} else {
+		if _, err := conn.Do("HMSET", rbds.blobDescriptorHashKey(dgst),
+			"digest", desc.Digest,
+			"size", desc.Size); err != nil {
+			return err
+		}
 	}
 
 	// Only set mediatype if not already set.
@@ -149,6 +157,7 @@ func (rbds *redisBlobDescriptorService) setDescriptor(ctx context.Context, conn 
 	}
 
 	// Set public if annotation is present.
+	// This may be from a placeholder descriptor without any other fields set.
 	if public, ok := desc.Annotations["public"]; ok {
 		if _, err := conn.Do("HMSET", rbds.blobDescriptorHashKey(dgst),
 			"public", public); err != nil {
