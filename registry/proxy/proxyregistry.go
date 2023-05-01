@@ -109,6 +109,7 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 			cm:        challenge.NewSimpleManager(),
 			cs:        cs,
 		},
+		descriptorService: ds,
 	}
 	go p.setBlobsPublic(ctx)
 	return &p, nil
