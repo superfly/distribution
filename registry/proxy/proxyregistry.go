@@ -120,22 +120,21 @@ func (pr *proxyingRegistry) setBlobsPublic(ctx context.Context) {
 	dcontext.GetLogger(ctx).Infof("scanning for public blobs in remote descriptor cache")
 	blobCount := 0
 	blobTaggedCount := 0
-	err := pr.embedded.Blobs().Enumerate(ctx, func(dgst digest.Digest) error {
+	_ = pr.embedded.Blobs().Enumerate(ctx, func(dgst digest.Digest) error {
+		logger := dcontext.GetLoggerWithField(ctx, "blob", dgst)
 		public, err := pr.setPublic(ctx, dgst)
 		if err != nil {
+			logger.WithError(err).Error("error setting blob public")
 			return err
 		}
 		blobCount += 1
 		if public {
+			logger.Info("set blob public")
 			blobTaggedCount += 1
 		}
 		return nil
 	})
-	if err == nil {
-		dcontext.GetLogger(ctx).Infof("scanned %d blobs, tagged %d public", blobCount, blobTaggedCount)
-	} else {
-		dcontext.GetLogger(ctx).Errorf("error setting blobs public: %v", err)
-	}
+	dcontext.GetLogger(ctx).Infof("scanned %d blobs, tagged %d public", blobCount, blobTaggedCount)
 }
 
 func (pr *proxyingRegistry) setBlobPublic(ctx context.Context) func(dgst digest.Digest) {

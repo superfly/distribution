@@ -19,6 +19,11 @@ type BlobDescriptorCacheProvider interface {
 // ValidateDescriptor provides a helper function to ensure that caches have
 // common criteria for admitting descriptors.
 func ValidateDescriptor(desc distribution.Descriptor) error {
+	// 'public' is a special-case tag that can just be an empty placeholder.
+	if _, ok := desc.Annotations["public"]; ok {
+		return nil
+	}
+
 	if err := desc.Digest.Validate(); err != nil {
 		return err
 	}
