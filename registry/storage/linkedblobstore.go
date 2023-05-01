@@ -145,6 +145,17 @@ func WithMount(digest digest.Digest) distribution.BlobCreateOption {
 	})
 }
 
+func WithoutUpload() distribution.BlobCreateOption {
+	return optionFunc(func(v interface{}) error {
+		opts, ok := v.(*distribution.CreateOptions)
+		if !ok {
+			return fmt.Errorf("unexpected options type: %T", v)
+		}
+		opts.SkipUpload = true
+		return nil
+	})
+}
+
 // Writer begins a blob write session, returning a handle.
 func (lbs *linkedBlobStore) Create(ctx context.Context, options ...distribution.BlobCreateOption) (distribution.BlobWriter, error) {
 	dcontext.GetLogger(ctx).Debug("(*linkedBlobStore).Writer")
@@ -166,6 +177,8 @@ func (lbs *linkedBlobStore) Create(ctx context.Context, options ...distribution.
 				return nil, distribution.ErrBlobMountedFrom{ErrBlobMounted: distribution.ErrBlobMounted{Descriptor: desc}, From: ref}
 			}
 			return nil, distribution.ErrBlobMounted{Descriptor: desc}
+		} else if opts.SkipUpload {
+			return nil, nil
 		}
 	}
 

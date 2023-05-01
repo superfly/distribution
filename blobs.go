@@ -216,7 +216,8 @@ type BlobCreateOption interface {
 // CreateOptions is a collection of blob creation modifiers relevant to general
 // blob storage intended to be configured by the BlobCreateOption.Apply method.
 type CreateOptions struct {
-	Mount Mount
+	Mount      Mount
+	SkipUpload bool
 }
 
 type DigestMount struct {

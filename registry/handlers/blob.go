@@ -65,7 +65,7 @@ func (bh *blobHandler) GetBlob(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if err == distribution.ErrBlobUnknown {
 			logger.Debug("Attempt to auto-mount blob")
-			w, err := blobs.Create(bh, storage.WithMount(bh.Digest))
+			_, err := blobs.Create(bh, storage.WithMount(bh.Digest), storage.WithoutUpload())
 			if err != nil {
 				var ebm distribution.ErrBlobMounted
 				if errors.As(err, &ebm) {
@@ -76,7 +76,6 @@ func (bh *blobHandler) GetBlob(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			} else {
-				err = w.Cancel(bh)
 				bh.Errors = append(bh.Errors, v2.ErrorCodeBlobUnknown.WithDetail(bh.Digest))
 				return
 			}
