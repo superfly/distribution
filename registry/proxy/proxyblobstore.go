@@ -15,12 +15,12 @@ import (
 )
 
 type proxyBlobStore struct {
-	localStore        distribution.BlobStore
-	remoteStore       distribution.BlobService
-	scheduler         *scheduler.TTLExpirationScheduler
-	repositoryName    reference.Named
-	authChallenger    authChallenger
-	descriptorService distribution.BlobDescriptorService
+	localStore     distribution.BlobStore
+	remoteStore    distribution.BlobService
+	scheduler      *scheduler.TTLExpirationScheduler
+	repositoryName reference.Named
+	authChallenger authChallenger
+	setPublic      func(dgst digest.Digest)
 }
 
 var _ distribution.BlobStore = &proxyBlobStore{}
@@ -99,14 +99,8 @@ func (pbs *proxyBlobStore) storeLocal(ctx context.Context, dgst digest.Digest) e
 	}
 
 	// Tag blob descriptor with 'public' annotation
-	if pbs.descriptorService != nil {
-		desc.Annotations = map[string]string{"public": "true"}
-		go func() {
-			err := pbs.descriptorService.SetDescriptor(ctx, dgst, desc)
-			if err != nil {
-				dcontext.GetLogger(ctx).Errorf("Error tagging public blob descriptor: %s", err.Error())
-			}
-		}()
+	if pbs.setPublic != nil {
+		go pbs.setPublic(dgst)
 	}
 
 	_, err = bw.Commit(ctx, desc)

@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"fmt"
+	"github.com/opencontainers/go-digest"
 	"net/http"
 	"net/url"
 	"sync"
@@ -99,7 +100,7 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 		return nil, err
 	}
 
-	return &proxyingRegistry{
+	p := proxyingRegistry{
 		embedded:  registry,
 		scheduler: s,
 		remoteURL: *remoteURL,
@@ -108,8 +109,69 @@ func NewRegistryPullThroughCache(ctx context.Context, registry distribution.Name
 			cm:        challenge.NewSimpleManager(),
 			cs:        cs,
 		},
-		descriptorService: ds,
-	}, nil
+	}
+	go p.setBlobsPublic(ctx)
+	return &p, nil
+}
+
+// Tag all existing cached blobs as public in the remote descriptor cache on startup.
+func (pr *proxyingRegistry) setBlobsPublic(ctx context.Context) {
+	dcontext.GetLogger(ctx).Infof("scanning for public blobs in remote descriptor cache")
+	blobCount := 0
+	blobTaggedCount := 0
+	err := pr.embedded.Blobs().Enumerate(ctx, func(dgst digest.Digest) error {
+		public, err := pr.setPublic(ctx, dgst)
+		if err != nil {
+			return err
+		}
+		blobCount += 1
+		if public {
+			blobTaggedCount += 1
+		}
+		return nil
+	})
+	if err == nil {
+		dcontext.GetLogger(ctx).Infof("scanned %d blobs, tagged %d public", blobCount, blobTaggedCount)
+	} else {
+		dcontext.GetLogger(ctx).Errorf("error setting blobs public: %v", err)
+	}
+}
+
+func (pr *proxyingRegistry) setBlobPublic(ctx context.Context) func(dgst digest.Digest) {
+	return func(dgst digest.Digest) {
+		public, err := pr.setPublic(ctx, dgst)
+		logger := dcontext.GetLoggerWithField(ctx, "blob", dgst)
+		if public {
+			logger.Info("Tagged public blob in remote descriptor cache")
+		}
+		if err != nil {
+			logger.WithError(err).Errorf("error setting blob public")
+		}
+	}
+}
+
+// Add a 'public' tag in the remote descriptor cache for the specified blob.
+// The tag indicates the blob has been found in a public registry, so it's allowed to
+// be linked through the automatic content-discovery mount process.
+func (pr *proxyingRegistry) setPublic(ctx context.Context, dgst digest.Digest) (bool, error) {
+	desc, err := pr.descriptorService.Stat(ctx, dgst)
+	if err == distribution.ErrBlobUnknown {
+		err = nil
+		desc = distribution.Descriptor{}
+	}
+	if err != nil {
+		return false, err
+	}
+	if _, ok := desc.Annotations["public"]; !ok {
+		desc.Annotations = map[string]string{"public": "true"}
+		err := pr.descriptorService.SetDescriptor(ctx, dgst, desc)
+		if err != nil {
+			return false, err
+		}
+		return true, nil
+	} else {
+		return false, nil
+	}
 }
 
 func (pr *proxyingRegistry) Scope() distribution.Scope {
@@ -160,12 +222,12 @@ func (pr *proxyingRegistry) Repository(ctx context.Context, name reference.Named
 
 	return &proxiedRepository{
 		blobStore: &proxyBlobStore{
-			localStore:        localRepo.Blobs(ctx),
-			remoteStore:       remoteRepo.Blobs(ctx),
-			scheduler:         pr.scheduler,
-			repositoryName:    name,
-			authChallenger:    pr.authChallenger,
-			descriptorService: pr.descriptorService,
+			localStore:     localRepo.Blobs(ctx),
+			remoteStore:    remoteRepo.Blobs(ctx),
+			scheduler:      pr.scheduler,
+			repositoryName: name,
+			authChallenger: pr.authChallenger,
+			setPublic:      pr.setBlobPublic(ctx),
 		},
 		manifests: &proxyManifestStore{
 			repositoryName:  name,
