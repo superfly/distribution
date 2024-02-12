@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"reflect"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -35,6 +36,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/sirupsen/logrus"
 
 	"github.com/distribution/distribution/v3/internal/dcontext"
 	storagedriver "github.com/distribution/distribution/v3/registry/storage/driver"
@@ -792,6 +794,7 @@ func (d *driver) Writer(ctx context.Context, path string, appendMode bool) (stor
 			break
 		}
 	}
+	logrus.Warnf("s3.go:Writer() | failed to find %s (append: %v)", path, appendMode)
 	return nil, storagedriver.PathNotFoundError{Path: path}
 }
 
@@ -822,6 +825,7 @@ func (d *driver) Stat(ctx context.Context, path string) (storagedriver.FileInfo,
 	} else if len(resp.CommonPrefixes) == 1 {
 		fi.IsDir = true
 	} else {
+		logrus.Warnf("s3.go:Stat() | failed to find %s, record len %v", path, len(resp.Contents))
 		return nil, storagedriver.PathNotFoundError{Path: path}
 	}
 
@@ -886,6 +890,7 @@ func (d *driver) List(ctx context.Context, opath string) ([]string, error) {
 		if len(files) == 0 && len(directories) == 0 {
 			// Treat empty response as missing directory, since we don't actually
 			// have directories in s3.
+			logrus.Warnf("s3.go:List() | empty response for directory")
 			return nil, storagedriver.PathNotFoundError{Path: opath}
 		}
 	}
@@ -1013,6 +1018,7 @@ func (d *driver) Delete(ctx context.Context, path string) error {
 		// if there were no more results to return after the first call, resp.IsTruncated would have been false
 		// and the loop would exit without recalling ListObjects
 		if err != nil || len(resp.Contents) == 0 {
+			logrus.Warnf("s3.go:Delete() | failed to find %s", path)
 			return storagedriver.PathNotFoundError{Path: path}
 		}
 
@@ -1272,6 +1278,8 @@ func (d *Driver) S3BucketKey(path string) string {
 
 func parseError(path string, err error) error {
 	if s3Err, ok := err.(awserr.Error); ok && s3Err.Code() == "NoSuchKey" {
+		logrus.Warnf("s3.go:parseError() | NoSuchKey")
+		debug.PrintStack()
 		return storagedriver.PathNotFoundError{Path: path}
 	}
 
