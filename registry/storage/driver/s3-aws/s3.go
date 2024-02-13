@@ -700,6 +700,7 @@ func (d *driver) Writer(ctx context.Context, path string, appendMode bool) (stor
 	key := d.s3Path(path)
 	if !appendMode {
 		// TODO (brianbland): cancel other uploads at this path
+		logrus.Warnf("s3.go:Writer() | not append! creating new upload for %s", path)
 		resp, err := d.S3.CreateMultipartUploadWithContext(ctx, &s3.CreateMultipartUploadInput{
 			Bucket:               aws.String(d.Bucket),
 			Key:                  aws.String(key),
@@ -943,6 +944,7 @@ func (d *driver) copy(ctx context.Context, sourcePath string, destPath string) e
 		return nil
 	}
 
+	logrus.Warnf("s3.go:copy() | manually copying %s -> %s", sourcePath, destPath)
 	createResp, err := d.S3.CreateMultipartUploadWithContext(ctx, &s3.CreateMultipartUploadInput{
 		Bucket:               aws.String(d.Bucket),
 		Key:                  aws.String(d.s3Path(destPath)),
@@ -1448,6 +1450,7 @@ func (w *writer) Write(p []byte) (int, error) {
 			return 0, err
 		}
 
+		logrus.Warnf("s3.go:writer.Write() | bytes left < min chunk size. creating new upload for %s", w.key)
 		resp, err := w.driver.S3.CreateMultipartUploadWithContext(w.ctx, &s3.CreateMultipartUploadInput{
 			Bucket:               aws.String(w.driver.Bucket),
 			Key:                  aws.String(w.key),
