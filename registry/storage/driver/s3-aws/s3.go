@@ -719,12 +719,14 @@ func (d *driver) Writer(ctx context.Context, path string, appendMode bool) (stor
 		Bucket: aws.String(d.Bucket),
 		Prefix: aws.String(key),
 	}
+	logrus.Warnf("s3.go:Writer() | trying to get writer for %s", path)
 	for {
 		resp, err := d.S3.ListMultipartUploadsWithContext(ctx, listMultipartUploadsInput)
 		if err != nil {
 			return nil, parseError(path, err)
 		}
 
+		logrus.Warnf("s3.go:Writer() | len(resp.Uploads) = %v", len(resp.Uploads))
 		// resp.Uploads can only be empty on the first call
 		// if there were no more results to return after the first call, resp.IsTruncated would have been false
 		// and the loop would be exited without recalling ListMultipartUploads
@@ -735,6 +737,7 @@ func (d *driver) Writer(ctx context.Context, path string, appendMode bool) (stor
 			}
 
 			if fi.Size() == 0 {
+				logrus.Warnf("s3.go:Writer() | zero-size path %s, creating new upload", path)
 				resp, err := d.S3.CreateMultipartUploadWithContext(ctx, &s3.CreateMultipartUploadInput{
 					Bucket:               aws.String(d.Bucket),
 					Key:                  aws.String(key),
@@ -782,6 +785,7 @@ func (d *driver) Writer(ctx context.Context, path string, appendMode bool) (stor
 				}
 				allParts = append(allParts, partsList.Parts...)
 			}
+			logrus.Warnf("Writing to existing parts (#parts = %v)", len(allParts))
 			return d.newWriter(ctx, key, *multi.UploadId, allParts), nil
 		}
 
@@ -791,6 +795,7 @@ func (d *driver) Writer(ctx context.Context, path string, appendMode bool) (stor
 		// from the s3 api docs, IsTruncated "specifies whether (true) or not (false) all of the results were returned"
 		// if everything has been returned, break
 		if resp.IsTruncated == nil || !*resp.IsTruncated {
+			logrus.Warnf("s3.go:Writer() | failed to write (truncated?: %v)", resp.IsTruncated)
 			break
 		}
 	}
