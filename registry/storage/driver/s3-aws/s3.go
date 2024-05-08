@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"path/filepath"
 	"reflect"
@@ -26,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -120,6 +122,7 @@ type DriverParameters struct {
 	UseDualStack                bool
 	Accelerate                  bool
 	LogLevel                    aws.LogLevelType
+	TCPUserTimeout              time.Duration
 }
 
 func init() {
@@ -440,6 +443,21 @@ func FromParameters(ctx context.Context, parameters map[string]interface{}) (*Dr
 		return nil, fmt.Errorf("the accelerate parameter should be a boolean")
 	}
 
+	tcpUserTimeout := parameters["tcpusertimeout"]
+	tcpUserTimeoutDuration := time.Duration(0)
+	switch tcpUserTimeout := tcpUserTimeout.(type) {
+	case string:
+		d, err := time.ParseDuration(tcpUserTimeout)
+		if err != nil {
+			return nil, fmt.Errorf("the tcpusertimeout parameter should be a duration")
+		}
+		tcpUserTimeoutDuration = d
+	case nil:
+		// do nothing
+	default:
+		return nil, fmt.Errorf("the tcpusertimeout parameter should be a duration")
+	}
+
 	params := DriverParameters{
 		fmt.Sprint(accessKey),
 		fmt.Sprint(secretKey),
@@ -465,6 +483,7 @@ func FromParameters(ctx context.Context, parameters map[string]interface{}) (*Dr
 		useDualStackBool,
 		accelerateBool,
 		getS3LogLevelFromParam(parameters["loglevel"]),
+		tcpUserTimeoutDuration,
 	}
 
 	return New(ctx, params)
@@ -560,6 +579,25 @@ func New(ctx context.Context, params DriverParameters) (*Driver, error) {
 
 	httpTransportModified := false
 	httpTransport := http.DefaultTransport.(*http.Transport).Clone()
+
+	if params.TCPUserTimeout > 0 {
+		dialer := &net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}
+		dialer.Control = func(network, address string, c syscall.RawConn) error {
+			var err error
+			controlErr := c.Control(func(fd uintptr) {
+				err = setTCPUserTimeout(fd, params.TCPUserTimeout)
+			})
+			if controlErr != nil {
+				return controlErr
+			}
+			return err
+		}
+		httpTransport.DialContext = dialer.DialContext
+		httpTransportModified = true
+	}
 
 	if params.SkipVerify {
 		httpTransport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
