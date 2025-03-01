@@ -120,8 +120,25 @@ func (e Error) Error() string {
 // WithDetail will return a new Error, based on the current one, but with
 // some Detail info added
 func (e Error) WithDetail(detail interface{}) Error {
+	ec := e.Code
+
+	// Don't wrap a more specific error code in ErrorCodeUnknown
+	// This eliminates some superfluous HTTP 500s we see
+	if ec == ErrorCodeUnknown {
+		if err, ok := detail.(ErrorCoder); ok {
+			ec = err.ErrorCode()
+		} else if errs, ok := detail.(Errors); ok {
+			for _, e := range errs {
+				if err, ok := e.(ErrorCoder); ok {
+					ec = err.ErrorCode()
+					break
+				}
+			}
+		}
+	}
+
 	return Error{
-		Code:    e.Code,
+		Code:    ec,
 		Message: e.Message,
 		Detail:  detail,
 	}
