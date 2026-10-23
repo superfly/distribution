@@ -12,6 +12,12 @@ import (
 	"github.com/distribution/distribution/v3/internal/dcontext"
 )
 
+// errClientDisconnected is returned by copyFullPayload when the client
+// disconnects before sending the full payload. The response status has
+// already been set to 499, so callers must not record an error for it, or
+// the 499 gets overwritten when the error is served.
+var errClientDisconnected = errors.New("client disconnected")
+
 // closeResources closes all the provided resources after running the target
 // handler.
 func closeResources(handler http.Handler, closers ...io.Closer) http.Handler {
@@ -55,7 +61,7 @@ func copyFullPayload(ctx context.Context, responseWriter http.ResponseWriter, r 
 				"copied":        copied,
 				"contentLength": r.ContentLength,
 			}, "error", "copied", "contentLength").Error("client disconnected during " + action)
-			return errors.New("client disconnected")
+			return errClientDisconnected
 		default:
 		}
 	}

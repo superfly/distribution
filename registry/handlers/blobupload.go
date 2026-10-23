@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -166,7 +167,9 @@ func (buh *blobUploadHandler) PatchBlobData(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := copyFullPayload(buh, w, r, buh.Upload, -1, "blob PATCH"); err != nil {
-		buh.Errors = append(buh.Errors, errcode.ErrorCodeUnknown.WithDetail(err.Error()))
+		if !errors.Is(err, errClientDisconnected) {
+			buh.Errors = append(buh.Errors, errcode.ErrorCodeUnknown.WithDetail(err.Error()))
+		}
 		return
 	}
 
@@ -206,7 +209,9 @@ func (buh *blobUploadHandler) PutBlobUploadComplete(w http.ResponseWriter, r *ht
 	}
 
 	if err := copyFullPayload(buh, w, r, buh.Upload, -1, "blob PUT"); err != nil {
-		buh.Errors = append(buh.Errors, errcode.ErrorCodeUnknown.WithDetail(err.Error()))
+		if !errors.Is(err, errClientDisconnected) {
+			buh.Errors = append(buh.Errors, errcode.ErrorCodeUnknown.WithDetail(err.Error()))
+		}
 		return
 	}
 

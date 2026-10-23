@@ -2808,3 +2808,55 @@ func TestProxyManifestGetByTag(t *testing.T) {
 		"Docker-Content-Digest": []string{newDigest.String()},
 	})
 }
+
+// disconnectingReader simulates a client that goes away mid-upload: it
+// cancels the request context and fails the read.
+type disconnectingReader struct {
+	cancel context.CancelFunc
+}
+
+func (r *disconnectingReader) Read([]byte) (int, error) {
+	r.cancel()
+	return 0, io.ErrUnexpectedEOF
+}
+
+// TestBlobUploadClientDisconnect checks that a client disconnecting during a
+// blob upload is reported as a 499, not overwritten with a 500 error response.
+func TestBlobUploadClientDisconnect(t *testing.T) {
+	env := newTestEnv(t, false)
+	defer env.Shutdown()
+
+	imageName, err := reference.WithName("foo/bar")
+	if err != nil {
+		t.Fatalf("unexpected error parsing image name: %v", err)
+	}
+
+	for _, method := range []string{http.MethodPatch, http.MethodPut} {
+		t.Run(method, func(t *testing.T) {
+			uploadURL, _ := startPushLayer(t, env, imageName)
+			u, err := url.Parse(uploadURL)
+			if err != nil {
+				t.Fatalf("error parsing upload URL: %v", err)
+			}
+			if method == http.MethodPut {
+				q := u.Query()
+				q.Set("digest", digest.FromString("never sent").String())
+				u.RawQuery = q.Encode()
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			req := httptest.NewRequest(method, u.RequestURI(), &disconnectingReader{cancel: cancel}).WithContext(ctx)
+			rec := httptest.NewRecorder()
+
+			env.app.ServeHTTP(rec, req)
+
+			if rec.Code != 499 {
+				t.Errorf("unexpected status: got %d, want 499", rec.Code)
+			}
+			if rec.Body.Len() != 0 {
+				t.Errorf("unexpected error body for disconnected client: %s", rec.Body.String())
+			}
+		})
+	}
+}

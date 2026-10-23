@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"mime"
 	"net/http"
@@ -238,7 +239,9 @@ func (imh *manifestHandler) PutManifest(w http.ResponseWriter, r *http.Request) 
 	var jsonBuf bytes.Buffer
 	if err := copyFullPayload(imh, w, r, &jsonBuf, maxManifestBodySize, "image manifest PUT"); err != nil {
 		// copyFullPayload reports the error if necessary
-		imh.Errors = append(imh.Errors, errcode.ErrorCodeManifestInvalid.WithDetail(err.Error()))
+		if !errors.Is(err, errClientDisconnected) {
+			imh.Errors = append(imh.Errors, errcode.ErrorCodeManifestInvalid.WithDetail(err.Error()))
+		}
 		return
 	}
 
