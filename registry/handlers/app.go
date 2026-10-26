@@ -618,7 +618,15 @@ func (app *App) dispatcher(dispatch dispatchFunc) http.Handler {
 			// own errors if they need different behavior (such as range errors
 			// for layer upload).
 			if context.Errors.Len() > 0 {
-				_ = errcode.ServeJSON(w, context.Errors)
+				if r.Context().Err() != nil {
+					// The client disconnected, so the errors are a
+					// consequence of that (e.g. canceled storage calls)
+					// and nobody is left to read them. Report "499 Client
+					// Closed Request" instead of a server error.
+					w.WriteHeader(499)
+				} else {
+					_ = errcode.ServeJSON(w, context.Errors)
+				}
 				app.logError(context, context.Errors)
 			} else if status, ok := context.Value("http.response.status").(int); ok && status >= 200 && status <= 399 {
 				dcontext.GetResponseLogger(context).Infof("response completed")
