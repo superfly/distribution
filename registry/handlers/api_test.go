@@ -2860,3 +2860,56 @@ func TestBlobUploadClientDisconnect(t *testing.T) {
 		})
 	}
 }
+
+// cancelAtEOFReader returns its data in full and cancels the request context
+// once it is exhausted, simulating a client that disconnects after sending
+// the payload but before the handler finishes.
+type cancelAtEOFReader struct {
+	r      io.Reader
+	cancel context.CancelFunc
+}
+
+func (r *cancelAtEOFReader) Read(p []byte) (int, error) {
+	n, err := r.r.Read(p)
+	if err == io.EOF {
+		r.cancel()
+	}
+	return n, err
+}
+
+// TestClientDisconnectAfterPayload checks that an error recorded after the
+// client went away is reported as a 499, not served as an error response.
+func TestClientDisconnectAfterPayload(t *testing.T) {
+	env := newTestEnv(t, false)
+	defer env.Shutdown()
+
+	imageName, err := reference.WithName("foo/bar")
+	if err != nil {
+		t.Fatalf("unexpected error parsing image name: %v", err)
+	}
+
+	uploadURL, _ := startPushLayer(t, env, imageName)
+	u, err := url.Parse(uploadURL)
+	if err != nil {
+		t.Fatalf("error parsing upload URL: %v", err)
+	}
+	// A digest that doesn't match the payload makes the commit fail.
+	q := u.Query()
+	q.Set("digest", digest.FromString("not the payload").String())
+	u.RawQuery = q.Encode()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	body := &cancelAtEOFReader{r: strings.NewReader("payload"), cancel: cancel}
+	req := httptest.NewRequest(http.MethodPut, u.RequestURI(), body).WithContext(ctx)
+	rec := httptest.NewRecorder()
+
+	env.app.ServeHTTP(rec, req)
+
+	if rec.Code != 499 {
+		t.Errorf("unexpected status: got %d, want 499", rec.Code)
+	}
+	if rec.Body.Len() != 0 {
+		t.Errorf("unexpected error body for disconnected client: %s", rec.Body.String())
+	}
+}
