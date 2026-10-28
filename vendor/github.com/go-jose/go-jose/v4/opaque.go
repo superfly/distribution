@@ -46,6 +46,11 @@ func newOpaqueSigner(alg SignatureAlgorithm, signer OpaqueSigner) (recipientSigI
 		return recipientSigInfo{}, ErrUnsupportedAlgorithm
 	}
 
+	pk := signer.Public()
+	if pk != nil && !pk.IsPublic() {
+		return recipientSigInfo{}, ErrNotPublic
+	}
+
 	return recipientSigInfo{
 		sigAlg:    alg,
 		publicKey: signer.Public,
@@ -83,6 +88,9 @@ func (o *opaqueVerifier) verifyPayload(payload []byte, signature []byte, alg Sig
 }
 
 // OpaqueKeyEncrypter is an interface that supports encrypting keys with an opaque key.
+//
+// Note: this cannot currently be implemented outside this package because of its
+// unexported method.
 type OpaqueKeyEncrypter interface {
 	// KeyID returns the kid
 	KeyID() string
